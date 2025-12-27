@@ -124,6 +124,8 @@ class Trainer:
                 # Encode sequence items
                 with torch.no_grad():
                     seq_item_emb = self.model.item_tower.encode_text(seq_texts)
+                    # Ensure embeddings are on the correct device
+                    seq_item_emb = seq_item_emb.to(self.device)
                 
                 # Pad or truncate to fixed length
                 max_seq_len = self.config['model']['buyer_tower']['max_interaction_history']
@@ -133,12 +135,16 @@ class Trainer:
                 
                 # Pad if needed
                 if len(seq_item_emb) < max_seq_len:
-                    padding = torch.zeros(max_seq_len - len(seq_item_emb), seq_item_emb.shape[1])
+                    padding = torch.zeros(
+                        max_seq_len - len(seq_item_emb), 
+                        seq_item_emb.shape[1],
+                        device=self.device
+                    )
                     seq_item_emb = torch.cat([seq_item_emb, padding])
                     seq_weights_tensor.extend([0.0] * (max_seq_len - len(seq_weights_tensor)))
                 
                 buyer_item_embeddings_list.append(seq_item_emb)
-                buyer_weights_list.append(torch.tensor(seq_weights_tensor, dtype=torch.float32))
+                buyer_weights_list.append(torch.tensor(seq_weights_tensor, dtype=torch.float32, device=self.device))
             
             buyer_item_embeddings = torch.stack(buyer_item_embeddings_list).to(self.device)
             buyer_weights = torch.stack(buyer_weights_list).to(self.device)
@@ -250,6 +256,8 @@ class Trainer:
                         seq_weights_tensor = [1.0]
                     
                     seq_item_emb = self.model.item_tower.encode_text(seq_texts)
+                    # Ensure embeddings are on the correct device
+                    seq_item_emb = seq_item_emb.to(self.device)
                     
                     max_seq_len = self.config['model']['buyer_tower']['max_interaction_history']
                     if len(seq_item_emb) > max_seq_len:
@@ -257,12 +265,16 @@ class Trainer:
                         seq_weights_tensor = seq_weights_tensor[-max_seq_len:]
                     
                     if len(seq_item_emb) < max_seq_len:
-                        padding = torch.zeros(max_seq_len - len(seq_item_emb), seq_item_emb.shape[1])
+                        padding = torch.zeros(
+                            max_seq_len - len(seq_item_emb), 
+                            seq_item_emb.shape[1],
+                            device=self.device
+                        )
                         seq_item_emb = torch.cat([seq_item_emb, padding])
                         seq_weights_tensor.extend([0.0] * (max_seq_len - len(seq_weights_tensor)))
                     
                     buyer_item_embeddings_list.append(seq_item_emb)
-                    buyer_weights_list.append(torch.tensor(seq_weights_tensor, dtype=torch.float32))
+                    buyer_weights_list.append(torch.tensor(seq_weights_tensor, dtype=torch.float32, device=self.device))
                 
                 buyer_item_embeddings = torch.stack(buyer_item_embeddings_list).to(self.device)
                 buyer_weights = torch.stack(buyer_weights_list).to(self.device)

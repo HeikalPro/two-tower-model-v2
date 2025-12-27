@@ -58,7 +58,8 @@ data/
 *.parquet
 *.json
 *.tsv
-*.txt
+# Exclude data .txt files but keep requirements.txt
+data/*.txt
 *.dat
 *.h5
 *.hdf5
@@ -66,6 +67,10 @@ data/
 *.pickle
 *.feather
 *.arrow
+
+# Keep requirements files (explicitly allow)
+!requirements.txt
+!requirements-gpu.txt
 
 # Jupyter Notebook
 .ipynb_checkpoints

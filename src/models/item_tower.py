@@ -109,12 +109,16 @@ class ItemTower(nn.Module):
         # Handle empty texts
         texts = [text if text and len(text.strip()) > 0 else " " for text in texts]
         
+        # Get device from model parameters
+        device = next(self.parameters()).device if list(self.parameters()) else torch.device('cpu')
+        
         with torch.no_grad() if not self.text_encoder.training else torch.enable_grad():
             embeddings = self.text_encoder.encode(
                 texts,
                 convert_to_tensor=True,
                 show_progress_bar=False,
-                normalize_embeddings=False
+                normalize_embeddings=False,
+                device=str(device)
             )
         
         return embeddings
@@ -139,6 +143,9 @@ class ItemTower(nn.Module):
         if self.brand_embedding is None or self.category_embedding is None:
             return None
         
+        # Get device from model parameters
+        device = next(self.parameters()).device if list(self.parameters()) else torch.device('cpu')
+        
         batch_size = len(brands) if brands else len(categories) if categories else 1
         
         # Encode brands
@@ -147,9 +154,9 @@ class ItemTower(nn.Module):
                 self.brand_vocab.get(brand, 0) if brand else 0
                 for brand in brands
             ]
-            brand_emb = self.brand_embedding(torch.tensor(brand_indices, dtype=torch.long))
+            brand_emb = self.brand_embedding(torch.tensor(brand_indices, dtype=torch.long, device=device))
         else:
-            brand_emb = torch.zeros(batch_size, self.categorical_embedding_dim)
+            brand_emb = torch.zeros(batch_size, self.categorical_embedding_dim, device=device)
         
         # Encode categories
         if categories:
@@ -157,9 +164,9 @@ class ItemTower(nn.Module):
                 self.category_vocab.get(cat, 0) if cat else 0
                 for cat in categories
             ]
-            category_emb = self.category_embedding(torch.tensor(category_indices, dtype=torch.long))
+            category_emb = self.category_embedding(torch.tensor(category_indices, dtype=torch.long, device=device))
         else:
-            category_emb = torch.zeros(batch_size, self.categorical_embedding_dim)
+            category_emb = torch.zeros(batch_size, self.categorical_embedding_dim, device=device)
         
         # Concatenate
         return torch.cat([brand_emb, category_emb], dim=1)

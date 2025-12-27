@@ -40,6 +40,8 @@ Two Tower model v2/
 
 ## Installation
 
+### Local Setup (CPU)
+
 1. **Clone the repository** (or ensure you're in the project directory)
 
 2. **Install dependencies**:
@@ -50,6 +52,47 @@ pip install -r requirements.txt
 3. **Verify installation**:
 ```bash
 python -c "import torch; import sentence_transformers; import faiss; print('All dependencies installed!')"
+```
+
+### AWS GPU Setup
+
+1. **SSH into your AWS GPU instance**
+
+2. **Clone the repository**:
+```bash
+git clone <your-repo-url>
+cd "Two Tower model v2"
+```
+
+3. **Run the GPU setup script**:
+```bash
+chmod +x scripts/setup_aws_gpu.sh
+./scripts/setup_aws_gpu.sh
+```
+
+Or manually:
+```bash
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install PyTorch with CUDA (adjust version based on your GPU)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+
+# Install other dependencies
+pip install -r requirements-gpu.txt
+```
+
+4. **Verify GPU availability**:
+```bash
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}'); print(f'Device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"CPU\"}')"
+```
+
+5. **Update config for GPU**:
+Ensure `configs/config.yaml` has:
+```yaml
+inference:
+  device: "cuda"  # Use GPU
 ```
 
 ## Configuration
@@ -203,9 +246,10 @@ Required columns:
 
 ## Performance Considerations
 
+- **GPU Acceleration**: All tensors are automatically moved to GPU when available. Training is significantly faster on GPU (10-50x speedup).
 - **Text Encoder**: Pretrained model is frozen by default (faster training)
 - **Batch Processing**: Product embeddings generated offline for efficiency
-- **FAISS Index**: Fast approximate nearest neighbor search
+- **FAISS Index**: Fast approximate nearest neighbor search (use `faiss-gpu` for GPU acceleration)
 - **API Latency**: Target <100ms for buyer encoding + retrieval
 
 ## Future Enhancements

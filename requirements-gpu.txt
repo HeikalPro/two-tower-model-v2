@@ -1,0 +1,35 @@
+# GPU-optimized requirements for AWS GPU instances
+# Install with: pip install -r requirements-gpu.txt
+
+# Core dependencies
+numpy>=1.24.0
+pandas>=2.0.0
+
+# PyTorch with CUDA 11.8 (most common on AWS)
+# Check your CUDA version with: nvidia-smi
+# For CUDA 11.8:
+torch>=2.0.0 --index-url https://download.pytorch.org/whl/cu118
+torchvision>=0.15.0 --index-url https://download.pytorch.org/whl/cu118
+
+# For CUDA 12.1 (newer GPUs):
+# torch>=2.0.0 --index-url https://download.pytorch.org/whl/cu121
+# torchvision>=0.15.0 --index-url https://download.pytorch.org/whl/cu121
+
+# Sentence transformers for text encoding
+sentence-transformers>=2.2.0
+
+# FAISS for vector search (GPU version)
+faiss-gpu>=1.7.4
+
+# FastAPI for API server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
+
+# Configuration management
+pyyaml>=6.0
+
+# Utilities
+tqdm>=4.66.0
+scikit-learn>=1.3.0
+

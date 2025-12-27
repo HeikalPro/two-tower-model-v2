@@ -124,18 +124,18 @@ class TwoTowerModel(nn.Module):
         
         # Encode buyers from sequences
         buyer_embeddings_list = []
-        for seq, weights in zip(buyer_sequences, [torch.tensor([w for _, w in seq], dtype=torch.float32) for seq in buyer_sequences]):
+        for seq, weights in zip(buyer_sequences, [torch.tensor([w for _, w in seq], dtype=torch.float32, device=device) for seq in buyer_sequences]):
             # Get item embeddings for sequence
             if product_embeddings_cache:
                 # Use cache if available
                 seq_item_embeddings = torch.stack([
-                    product_embeddings_cache.get(pid, torch.zeros(self.item_tower.embedding_dim))
+                    product_embeddings_cache.get(pid, torch.zeros(self.item_tower.embedding_dim, device=device))
                     for pid, _ in seq
                 ]).to(device)
             else:
                 # This is a simplified version - in practice, we'd need product texts
                 # For now, we'll use a placeholder that should be handled differently
-                seq_item_embeddings = torch.zeros(len(seq), self.item_tower.embedding_dim).to(device)
+                seq_item_embeddings = torch.zeros(len(seq), self.item_tower.embedding_dim, device=device)
             
             # Add batch dimension
             seq_item_embeddings = seq_item_embeddings.unsqueeze(0)
