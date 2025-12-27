@@ -18,10 +18,12 @@ torchvision>=0.15.0
 # Sentence transformers for text encoding
 sentence-transformers>=2.2.0
 
-# FAISS for vector search (GPU version)
-# Install faiss-gpu for GPU acceleration, or faiss-cpu for CPU
-faiss-gpu>=1.7.4
-# Alternative for CPU: faiss-cpu>=1.7.4
+# FAISS for vector search
+# Note: faiss-gpu is not available via pip. Use one of these options:
+# Option 1 (Recommended for GPU): Install via conda
+#   conda install -c conda-forge faiss-gpu
+# Option 2: Use CPU version (works fine for most use cases)
+faiss-cpu>=1.7.4
 
 # FastAPI for API server
 fastapi>=0.104.0

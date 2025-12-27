@@ -31,6 +31,12 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 echo "Installing other dependencies..."
 pip install -r requirements-gpu.txt
 
+# Note about FAISS-GPU
+echo ""
+echo "Note: FAISS-CPU is installed by default. For GPU-accelerated FAISS:"
+echo "  conda install -c conda-forge faiss-gpu"
+echo ""
+
 # Verify GPU availability
 echo "Verifying GPU setup..."
 python3 -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"N/A\"}')"
