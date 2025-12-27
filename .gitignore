@@ -53,7 +53,6 @@ embeddings/
 *.index
 
 # Data files and datasets
-data/
 *.csv
 *.parquet
 *.json
