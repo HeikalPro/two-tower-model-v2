@@ -1,0 +1,52 @@
+# Two-Tower Recommendation Retrieval System Configuration
+
+# Model Configuration
+model:
+  embedding_dim: 384  # Output dimension for embeddings
+  item_tower:
+    text_encoder: "paraphrase-multilingual-MiniLM-L12-v2"
+    use_categorical_features: true
+    categorical_embedding_dim: 64
+    projection_hidden_dim: 256
+  buyer_tower:
+    aggregation_method: "attention"  # Options: "weighted_avg" or "attention"
+    attention_hidden_dim: 128
+    max_interaction_history: 100  # Maximum interactions to consider
+
+# Training Configuration
+training:
+  batch_size: 512
+  learning_rate: 0.001
+  num_epochs: 10
+  temperature: 0.07  # Temperature for InfoNCE loss
+  num_negatives: 4  # Number of random negatives per positive
+  validation_split: 0.1
+  checkpoint_dir: "checkpoints"
+  save_every_n_epochs: 2
+  freeze_text_encoder: true  # Freeze pretrained text encoder
+
+# Event Weights
+event_weights:
+  view: 1
+  add_to_cart: 5
+  purchase: 10
+
+# Data Paths
+data:
+  events_path: "data/events.csv"
+  products_path: "data/products.csv"
+  output_dir: "outputs"
+
+# Inference Configuration
+inference:
+  embeddings_dir: "outputs/embeddings"
+  index_dir: "outputs/index"
+  model_checkpoint: "checkpoints/best_model.pt"
+  device: "cuda"  # Options: "cuda" or "cpu"
+
+# API Configuration
+api:
+  host: "0.0.0.0"
+  port: 8000
+  max_interactions_per_request: 100
+
