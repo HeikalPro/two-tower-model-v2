@@ -1,12 +1,18 @@
 """Training script for Two-Tower model."""
 
 import sys
+import os
 from pathlib import Path
 
 # Add project root to path (resolve to absolute path for reliability)
 project_root = Path(__file__).parent.parent.resolve()
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+print(f"DEBUG: project_root = {project_root}")
+print(f"DEBUG: src exists = {(project_root / 'src').exists()}")
+print(f"DEBUG: src/data exists = {(project_root / 'src' / 'data').exists()}")
+print(f"DEBUG: sys.path = {sys.path[:3]}")
+
+sys.path.insert(0, str(project_root))
+os.chdir(project_root)  # Also change working directory
 
 import torch
 from torch.utils.data import DataLoader
