@@ -71,6 +71,93 @@ class Trainer:
         """
         self.product_metadata = product_metadata
     
+    def _encode_buyer_sequences_batched(
+        self,
+        buyer_sequences,
+        weights,
+        positive_texts
+    ):
+        """Encode buyer sequences in a batched manner for efficiency.
+        
+        Args:
+            buyer_sequences: List of buyer interaction sequences
+            weights: Tensor of weights for sequences
+            positive_texts: List of positive product texts (for fallback)
+            
+        Returns:
+            Tuple of (buyer_item_embeddings, buyer_weights) tensors
+        """
+        max_seq_len = self.config['model']['buyer_tower']['max_interaction_history']
+        
+        # Collect all texts to encode in one batch
+        all_seq_texts = []
+        seq_lengths = []
+        seq_weights_all = []
+        
+        for seq, seq_weights in zip(buyer_sequences, weights):
+            seq_texts = []
+            seq_weights_tensor = []
+            
+            # Handle tuples: (product_id, weight) or (product_id, weight, timestamp)
+            for item in seq:
+                if len(item) == 3:
+                    product_id, weight, _ = item
+                elif len(item) == 2:
+                    product_id, weight = item
+                else:
+                    continue
+                
+                if self.product_metadata and product_id in self.product_metadata:
+                    seq_texts.append(self.product_metadata[product_id]['text'])
+                    seq_weights_tensor.append(weight)
+            
+            # Fallback: use positive product text if sequence is empty
+            if len(seq_texts) == 0:
+                seq_texts = [positive_texts[len(seq_lengths)]]
+                seq_weights_tensor = [1.0]
+            
+            # Truncate if too long
+            if len(seq_texts) > max_seq_len:
+                seq_texts = seq_texts[-max_seq_len:]
+                seq_weights_tensor = seq_weights_tensor[-max_seq_len:]
+            
+            seq_lengths.append(len(seq_texts))
+            all_seq_texts.extend(seq_texts)
+            seq_weights_all.append(seq_weights_tensor)
+        
+        # Encode ALL texts in ONE batch (massive speedup!)
+        with torch.no_grad():
+            all_embeddings = self.model.item_tower.encode_text(all_seq_texts)
+            all_embeddings = all_embeddings.to(self.device)
+        
+        # Reshape back to per-buyer sequences
+        buyer_item_embeddings_list = []
+        buyer_weights_list = []
+        start_idx = 0
+        
+        for i, (seq_len, seq_weights_tensor) in enumerate(zip(seq_lengths, seq_weights_all)):
+            # Extract embeddings for this sequence
+            seq_emb = all_embeddings[start_idx:start_idx + seq_len]
+            start_idx += seq_len
+            
+            # Pad if needed
+            if seq_len < max_seq_len:
+                padding = torch.zeros(
+                    max_seq_len - seq_len,
+                    seq_emb.shape[1],
+                    device=self.device
+                )
+                seq_emb = torch.cat([seq_emb, padding], dim=0)
+                seq_weights_tensor.extend([0.0] * (max_seq_len - len(seq_weights_tensor)))
+            
+            buyer_item_embeddings_list.append(seq_emb)
+            buyer_weights_list.append(torch.tensor(seq_weights_tensor, dtype=torch.float32, device=self.device))
+        
+        buyer_item_embeddings = torch.stack(buyer_item_embeddings_list).to(self.device)
+        buyer_weights = torch.stack(buyer_weights_list).to(self.device)
+        
+        return buyer_item_embeddings, buyer_weights
+    
     def train_epoch(self) -> float:
         """Train for one epoch.
         
@@ -93,61 +180,10 @@ class Trainer:
             negative_texts = batch['negative_product_texts']
             weights = batch['weights'].to(self.device)
             
-            # Encode buyer sequences
-            # For each buyer, get item embeddings from their sequence
-            buyer_item_embeddings_list = []
-            buyer_weights_list = []
-            
-            for seq, seq_weights in zip(buyer_sequences, weights):
-                # Get product texts for sequence
-                seq_texts = []
-                seq_weights_tensor = []
-                
-                # Handle tuples: (product_id, weight) or (product_id, weight, timestamp)
-                for item in seq:
-                    if len(item) == 3:
-                        product_id, weight, _ = item  # Unpack (product_id, weight, timestamp)
-                    elif len(item) == 2:
-                        product_id, weight = item  # Unpack (product_id, weight)
-                    else:
-                        continue  # Skip invalid entries
-                    
-                    if self.product_metadata and product_id in self.product_metadata:
-                        seq_texts.append(self.product_metadata[product_id]['text'])
-                        seq_weights_tensor.append(weight)
-                
-                if len(seq_texts) == 0:
-                    # Fallback: use positive product text
-                    seq_texts = [positive_texts[len(buyer_item_embeddings_list)]]
-                    seq_weights_tensor = [1.0]
-                
-                # Encode sequence items
-                with torch.no_grad():
-                    seq_item_emb = self.model.item_tower.encode_text(seq_texts)
-                    # Ensure embeddings are on the correct device
-                    seq_item_emb = seq_item_emb.to(self.device)
-                
-                # Pad or truncate to fixed length
-                max_seq_len = self.config['model']['buyer_tower']['max_interaction_history']
-                if len(seq_item_emb) > max_seq_len:
-                    seq_item_emb = seq_item_emb[-max_seq_len:]
-                    seq_weights_tensor = seq_weights_tensor[-max_seq_len:]
-                
-                # Pad if needed
-                if len(seq_item_emb) < max_seq_len:
-                    padding = torch.zeros(
-                        max_seq_len - len(seq_item_emb), 
-                        seq_item_emb.shape[1],
-                        device=self.device
-                    )
-                    seq_item_emb = torch.cat([seq_item_emb, padding])
-                    seq_weights_tensor.extend([0.0] * (max_seq_len - len(seq_weights_tensor)))
-                
-                buyer_item_embeddings_list.append(seq_item_emb)
-                buyer_weights_list.append(torch.tensor(seq_weights_tensor, dtype=torch.float32, device=self.device))
-            
-            buyer_item_embeddings = torch.stack(buyer_item_embeddings_list).to(self.device)
-            buyer_weights = torch.stack(buyer_weights_list).to(self.device)
+            # Encode buyer sequences in batched manner (optimized)
+            buyer_item_embeddings, buyer_weights = self._encode_buyer_sequences_batched(
+                buyer_sequences, weights, positive_texts
+            )
             
             # Forward pass
             self.optimizer.zero_grad()
@@ -230,54 +266,10 @@ class Trainer:
                 negative_texts = batch['negative_product_texts']
                 weights = batch['weights'].to(self.device)
                 
-                # Encode buyer sequences (same as training)
-                buyer_item_embeddings_list = []
-                buyer_weights_list = []
-                
-                for seq, seq_weights in zip(buyer_sequences, weights):
-                    seq_texts = []
-                    seq_weights_tensor = []
-                    
-                    # Handle tuples: (product_id, weight) or (product_id, weight, timestamp)
-                    for item in seq:
-                        if len(item) == 3:
-                            product_id, weight, _ = item  # Unpack (product_id, weight, timestamp)
-                        elif len(item) == 2:
-                            product_id, weight = item  # Unpack (product_id, weight)
-                        else:
-                            continue  # Skip invalid entries
-                        
-                        if self.product_metadata and product_id in self.product_metadata:
-                            seq_texts.append(self.product_metadata[product_id]['text'])
-                            seq_weights_tensor.append(weight)
-                    
-                    if len(seq_texts) == 0:
-                        seq_texts = [positive_texts[len(buyer_item_embeddings_list)]]
-                        seq_weights_tensor = [1.0]
-                    
-                    seq_item_emb = self.model.item_tower.encode_text(seq_texts)
-                    # Ensure embeddings are on the correct device
-                    seq_item_emb = seq_item_emb.to(self.device)
-                    
-                    max_seq_len = self.config['model']['buyer_tower']['max_interaction_history']
-                    if len(seq_item_emb) > max_seq_len:
-                        seq_item_emb = seq_item_emb[-max_seq_len:]
-                        seq_weights_tensor = seq_weights_tensor[-max_seq_len:]
-                    
-                    if len(seq_item_emb) < max_seq_len:
-                        padding = torch.zeros(
-                            max_seq_len - len(seq_item_emb), 
-                            seq_item_emb.shape[1],
-                            device=self.device
-                        )
-                        seq_item_emb = torch.cat([seq_item_emb, padding])
-                        seq_weights_tensor.extend([0.0] * (max_seq_len - len(seq_weights_tensor)))
-                    
-                    buyer_item_embeddings_list.append(seq_item_emb)
-                    buyer_weights_list.append(torch.tensor(seq_weights_tensor, dtype=torch.float32, device=self.device))
-                
-                buyer_item_embeddings = torch.stack(buyer_item_embeddings_list).to(self.device)
-                buyer_weights = torch.stack(buyer_weights_list).to(self.device)
+                # Encode buyer sequences in batched manner (optimized)
+                buyer_item_embeddings, buyer_weights = self._encode_buyer_sequences_batched(
+                    buyer_sequences, weights, positive_texts
+                )
                 
                 # Get metadata
                 positive_brands = None
