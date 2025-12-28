@@ -95,19 +95,17 @@ class EmbeddingEncoder:
                     category_vocab[idx] = category
             
             # If vocabs not in checkpoint, infer sizes from state_dict and create dummy vocabs
+            # Note: initialize_categorical_embeddings adds '<UNK>' automatically, so we need size-1
             if brand_vocab is None and brand_embedding_key in state_dict:
                 brand_vocab_size = state_dict[brand_embedding_key].shape[0]
-                # Create dummy vocab of the correct size
-                brand_vocab = [f'brand_{i}' for i in range(brand_vocab_size)]
-                # Replace first with UNK token
-                brand_vocab[0] = '<UNK>'
+                # Create dummy vocab of size-1 (UNK will be added by initialize_categorical_embeddings)
+                # This ensures final size matches checkpoint: ['<UNK>'] + [dummy_1, ..., dummy_N-1] = N total
+                brand_vocab = [f'brand_{i}' for i in range(1, brand_vocab_size)]
             
             if category_vocab is None and category_embedding_key in state_dict:
                 category_vocab_size = state_dict[category_embedding_key].shape[0]
-                # Create dummy vocab of the correct size
-                category_vocab = [f'category_{i}' for i in range(category_vocab_size)]
-                # Replace first with UNK token
-                category_vocab[0] = '<UNK>'
+                # Create dummy vocab of size-1 (UNK will be added by initialize_categorical_embeddings)
+                category_vocab = [f'category_{i}' for i in range(1, category_vocab_size)]
             
             # Initialize embeddings if we have vocab info
             if brand_vocab is not None or category_vocab is not None:
@@ -158,39 +156,51 @@ class EmbeddingEncoder:
                 brands = [p.get('brand') for p in product_metadata.values() if p.get('brand')]
                 categories = [p.get('category') for p in product_metadata.values() if p.get('category')]
                 
-                # Get current vocab sizes
-                brand_vocab_size = len(item_tower.brand_vocab) if hasattr(item_tower, 'brand_vocab') else None
-                category_vocab_size = len(item_tower.category_vocab) if hasattr(item_tower, 'category_vocab') else None
+                # Get exact vocab sizes from embedding layers (these match the checkpoint)
+                brand_vocab_size = item_tower.brand_embedding.num_embeddings if item_tower.brand_embedding is not None else None
+                category_vocab_size = item_tower.category_embedding.num_embeddings if item_tower.category_embedding is not None else None
                 
                 # Reconstruct vocabs in the same order as training: ['<UNK>'] + sorted(unique_values)
+                # IMPORTANT: Must match exact size from checkpoint (embedding layer size)
                 if brands and brand_vocab_size:
                     unique_brands = sorted(set(brands))
-                    # Ensure we have enough entries (pad if needed, truncate if too many)
+                    # Create vocab list: UNK at 0, then actual brands, pad/truncate to exact size
+                    # The embedding layer already exists with size brand_vocab_size, we just update the mapping
                     if len(unique_brands) + 1 <= brand_vocab_size:
+                        # We have enough or fewer brands - pad with dummies if needed
                         reconstructed_brand_vocab = ['<UNK>'] + unique_brands
-                        # Pad with dummy values if needed to match size
+                        # Pad with dummy values to match exact embedding size
                         while len(reconstructed_brand_vocab) < brand_vocab_size:
-                            reconstructed_brand_vocab.append(f'brand_{len(reconstructed_brand_vocab)}')
+                            reconstructed_brand_vocab.append(f'brand_dummy_{len(reconstructed_brand_vocab)}')
                     else:
-                        # Truncate to match size (keep most common or first N)
+                        # Too many brands - truncate to match exact size
                         reconstructed_brand_vocab = ['<UNK>'] + unique_brands[:brand_vocab_size-1]
                     
-                    # Update vocab dictionary
+                    # Ensure exact size match
+                    assert len(reconstructed_brand_vocab) == brand_vocab_size, \
+                        f"Brand vocab size mismatch: {len(reconstructed_brand_vocab)} != {brand_vocab_size}"
+                    
+                    # Update vocab dictionary (this doesn't change embedding layer, just the string->index mapping)
                     item_tower.brand_vocab = {brand: idx for idx, brand in enumerate(reconstructed_brand_vocab)}
                 
                 if categories and category_vocab_size:
                     unique_categories = sorted(set(categories))
-                    # Ensure we have enough entries
+                    # Create vocab list: UNK at 0, then actual categories, pad/truncate to exact size
                     if len(unique_categories) + 1 <= category_vocab_size:
+                        # We have enough or fewer categories - pad with dummies if needed
                         reconstructed_category_vocab = ['<UNK>'] + unique_categories
-                        # Pad with dummy values if needed to match size
+                        # Pad with dummy values to match exact embedding size
                         while len(reconstructed_category_vocab) < category_vocab_size:
-                            reconstructed_category_vocab.append(f'category_{len(reconstructed_category_vocab)}')
+                            reconstructed_category_vocab.append(f'category_dummy_{len(reconstructed_category_vocab)}')
                     else:
-                        # Truncate to match size
+                        # Too many categories - truncate to match exact size
                         reconstructed_category_vocab = ['<UNK>'] + unique_categories[:category_vocab_size-1]
                     
-                    # Update vocab dictionary
+                    # Ensure exact size match
+                    assert len(reconstructed_category_vocab) == category_vocab_size, \
+                        f"Category vocab size mismatch: {len(reconstructed_category_vocab)} != {category_vocab_size}"
+                    
+                    # Update vocab dictionary (this doesn't change embedding layer, just the string->index mapping)
                     item_tower.category_vocab = {cat: idx for idx, cat in enumerate(reconstructed_category_vocab)}
     
     def encode_items(
