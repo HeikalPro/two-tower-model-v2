@@ -259,8 +259,8 @@ class EmbeddingEncoder:
         if self.product_metadata is None:
             raise ValueError("Product metadata must be set before encoding buyers")
         
-        # Sort by timestamp if available
-        if all('timestamp' in interaction for interaction in interactions):
+        # Sort by timestamp if available and not None
+        if all(interaction.get('timestamp') is not None for interaction in interactions):
             interactions = sorted(interactions, key=lambda x: x['timestamp'])
         
         # Limit to max history
