@@ -332,6 +332,13 @@ class Trainer:
             'config': self.config
         }
         
+        # Save categorical vocabularies if they exist
+        item_tower = self.model.item_tower
+        if hasattr(item_tower, 'brand_vocab') and item_tower.brand_vocab is not None:
+            checkpoint['brand_vocab'] = item_tower.brand_vocab
+        if hasattr(item_tower, 'category_vocab') and item_tower.category_vocab is not None:
+            checkpoint['category_vocab'] = item_tower.category_vocab
+        
         # Save regular checkpoint
         checkpoint_path = self.checkpoint_dir / f"checkpoint_epoch_{self.current_epoch + 1}.pt"
         torch.save(checkpoint, checkpoint_path)

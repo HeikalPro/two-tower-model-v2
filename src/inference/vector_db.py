@@ -230,3 +230,4 @@ class VectorDatabase:
         # For now, return None and suggest using the saved embeddings file
         return None
 
+

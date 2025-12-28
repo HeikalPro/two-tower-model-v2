@@ -49,3 +49,4 @@ def get_event_weight(event_name: str, config: Dict[str, Any]) -> int:
     mapped_name = mapping.get(event_name_lower, event_name_lower)
     return event_weights.get(mapped_name, 1)  # Default weight is 1
 
+

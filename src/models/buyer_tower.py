@@ -143,3 +143,4 @@ class BuyerTower(nn.Module):
         
         return self.forward(item_embeddings, weights)
 
+

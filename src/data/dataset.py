@@ -110,3 +110,4 @@ def collate_fn(batch: List[Dict]) -> Dict:
         'weights': torch.tensor([item['weight'] for item in batch], dtype=torch.float32)
     }
 
+

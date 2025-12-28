@@ -59,6 +59,11 @@ class EmbeddingEncoder:
         else:
             model_config = self.config['model']
         
+        # Check if categorical embeddings exist in checkpoint
+        state_dict = checkpoint['model_state_dict']
+        brand_embedding_key = 'item_tower.brand_embedding.weight'
+        category_embedding_key = 'item_tower.category_embedding.weight'
+        
         # Initialize Item Tower
         item_tower = ItemTower(
             text_encoder_name=model_config['item_tower']['text_encoder'],
@@ -68,6 +73,48 @@ class EmbeddingEncoder:
             projection_hidden_dim=model_config['item_tower']['projection_hidden_dim'],
             freeze_text_encoder=self.config['training']['freeze_text_encoder']
         )
+        
+        # Initialize categorical embeddings if they exist in checkpoint
+        if model_config['item_tower']['use_categorical_features']:
+            # Try to load vocabs from checkpoint (preferred method)
+            brand_vocab = None
+            category_vocab = None
+            
+            if 'brand_vocab' in checkpoint:
+                # Reconstruct brand vocab list from dict (dict maps brand -> index)
+                brand_vocab_dict = checkpoint['brand_vocab']
+                brand_vocab = [''] * len(brand_vocab_dict)
+                for brand, idx in brand_vocab_dict.items():
+                    brand_vocab[idx] = brand
+            
+            if 'category_vocab' in checkpoint:
+                # Reconstruct category vocab list from dict (dict maps category -> index)
+                category_vocab_dict = checkpoint['category_vocab']
+                category_vocab = [''] * len(category_vocab_dict)
+                for category, idx in category_vocab_dict.items():
+                    category_vocab[idx] = category
+            
+            # If vocabs not in checkpoint, infer sizes from state_dict and create dummy vocabs
+            if brand_vocab is None and brand_embedding_key in state_dict:
+                brand_vocab_size = state_dict[brand_embedding_key].shape[0]
+                # Create dummy vocab of the correct size
+                brand_vocab = [f'brand_{i}' for i in range(brand_vocab_size)]
+                # Replace first with UNK token
+                brand_vocab[0] = '<UNK>'
+            
+            if category_vocab is None and category_embedding_key in state_dict:
+                category_vocab_size = state_dict[category_embedding_key].shape[0]
+                # Create dummy vocab of the correct size
+                category_vocab = [f'category_{i}' for i in range(category_vocab_size)]
+                # Replace first with UNK token
+                category_vocab[0] = '<UNK>'
+            
+            # Initialize embeddings if we have vocab info
+            if brand_vocab is not None or category_vocab is not None:
+                item_tower.initialize_categorical_embeddings(
+                    brand_vocab=brand_vocab,
+                    category_vocab=category_vocab
+                )
         
         # Initialize Buyer Tower
         buyer_tower = BuyerTower(
@@ -91,6 +138,60 @@ class EmbeddingEncoder:
             product_metadata: Dictionary mapping product_id to metadata
         """
         self.product_metadata = product_metadata
+        
+        # If categorical embeddings were loaded with dummy vocabs, reconstruct from metadata
+        item_tower = self.model.item_tower
+        if (item_tower.use_categorical_features and 
+            hasattr(item_tower, 'brand_embedding') and 
+            item_tower.brand_embedding is not None):
+            
+            # Check if we're using dummy vocabs (vocabs that start with 'brand_' or 'category_')
+            needs_reconstruction = False
+            if hasattr(item_tower, 'brand_vocab'):
+                # Check if first non-UNK entry is a dummy
+                vocab_list = sorted([k for k in item_tower.brand_vocab.keys() if k != '<UNK>'])
+                if vocab_list and vocab_list[0].startswith('brand_'):
+                    needs_reconstruction = True
+            
+            if needs_reconstruction:
+                # Reconstruct vocabs from product metadata (same way as training)
+                brands = [p.get('brand') for p in product_metadata.values() if p.get('brand')]
+                categories = [p.get('category') for p in product_metadata.values() if p.get('category')]
+                
+                # Get current vocab sizes
+                brand_vocab_size = len(item_tower.brand_vocab) if hasattr(item_tower, 'brand_vocab') else None
+                category_vocab_size = len(item_tower.category_vocab) if hasattr(item_tower, 'category_vocab') else None
+                
+                # Reconstruct vocabs in the same order as training: ['<UNK>'] + sorted(unique_values)
+                if brands and brand_vocab_size:
+                    unique_brands = sorted(set(brands))
+                    # Ensure we have enough entries (pad if needed, truncate if too many)
+                    if len(unique_brands) + 1 <= brand_vocab_size:
+                        reconstructed_brand_vocab = ['<UNK>'] + unique_brands
+                        # Pad with dummy values if needed to match size
+                        while len(reconstructed_brand_vocab) < brand_vocab_size:
+                            reconstructed_brand_vocab.append(f'brand_{len(reconstructed_brand_vocab)}')
+                    else:
+                        # Truncate to match size (keep most common or first N)
+                        reconstructed_brand_vocab = ['<UNK>'] + unique_brands[:brand_vocab_size-1]
+                    
+                    # Update vocab dictionary
+                    item_tower.brand_vocab = {brand: idx for idx, brand in enumerate(reconstructed_brand_vocab)}
+                
+                if categories and category_vocab_size:
+                    unique_categories = sorted(set(categories))
+                    # Ensure we have enough entries
+                    if len(unique_categories) + 1 <= category_vocab_size:
+                        reconstructed_category_vocab = ['<UNK>'] + unique_categories
+                        # Pad with dummy values if needed to match size
+                        while len(reconstructed_category_vocab) < category_vocab_size:
+                            reconstructed_category_vocab.append(f'category_{len(reconstructed_category_vocab)}')
+                    else:
+                        # Truncate to match size
+                        reconstructed_category_vocab = ['<UNK>'] + unique_categories[:category_vocab_size-1]
+                    
+                    # Update vocab dictionary
+                    item_tower.category_vocab = {cat: idx for idx, cat in enumerate(reconstructed_category_vocab)}
     
     def encode_items(
         self,
