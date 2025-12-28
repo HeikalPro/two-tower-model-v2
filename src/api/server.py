@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional
 import numpy as np
+import pandas as pd
 from pathlib import Path
 
 from src.inference.encoder import EmbeddingEncoder
@@ -44,11 +45,20 @@ class RetrieveRequest(BaseModel):
     k: int = Field(10, ge=1, le=100, description="Number of products to retrieve")
 
 
+class ProductInfo(BaseModel):
+    """Product information."""
+    product_id: str
+    title: str
+    description: str
+    brand: Optional[str]
+    category: Optional[str]
+    score: float
+
+
 class RetrieveResponse(BaseModel):
     """Response with retrieved products."""
     buyer_id: str
-    product_ids: List[str]
-    scores: List[float]
+    products: List[ProductInfo]
 
 
 # Initialize FastAPI app
@@ -62,12 +72,13 @@ app = FastAPI(
 encoder: Optional[EmbeddingEncoder] = None
 vector_db: Optional[VectorDatabase] = None
 config: Optional[Dict] = None
+products_df = None  # Store products DataFrame for retrieving product details
 
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize models and vector database at startup."""
-    global encoder, vector_db, config
+    global encoder, vector_db, config, products_df
     
     config = load_config()
     
@@ -100,7 +111,7 @@ async def startup_event():
     # Load product metadata for encoder
     print("Loading product metadata...")
     processor = DataProcessor()
-    products_df = processor.load_products()
+    products_df = processor.load_products()  # Store globally for retrieve endpoint
     product_metadata = processor.get_product_metadata(products_df)
     encoder.set_product_metadata(product_metadata)
     print(f"Loaded metadata for {len(product_metadata)} products")
@@ -177,10 +188,15 @@ async def retrieve(request: RetrieveRequest):
         request: Retrieval request
         
     Returns:
-        Retrieved product IDs and scores
+        Retrieved products with details (ID, title, description, brand, category, score)
     """
+    global products_df
+    
     if encoder is None or vector_db is None:
         raise HTTPException(status_code=503, detail="Encoder or vector database not initialized")
+    
+    if products_df is None:
+        raise HTTPException(status_code=503, detail="Products data not loaded")
     
     try:
         # Encode buyer
@@ -198,13 +214,38 @@ async def retrieve(request: RetrieveRequest):
         # Retrieve products
         results = vector_db.retrieve(buyer_embedding, k=request.k)
         
-        product_ids = [pid for pid, _ in results]
-        scores = [score for _, score in results]
+        # Build product info list
+        products = []
+        for product_id, score in results:
+            # Find product in dataframe
+            product_row = products_df[products_df['product_id'] == product_id]
+            
+            if not product_row.empty:
+                row = product_row.iloc[0]
+                product_info = ProductInfo(
+                    product_id=product_id,
+                    title=str(row.get('title', 'N/A')),
+                    description=str(row.get('description', 'N/A')),
+                    brand=str(row.get('brand', None)) if pd.notna(row.get('brand')) else None,
+                    category=str(row.get('category', None)) if pd.notna(row.get('category')) else None,
+                    score=float(score)
+                )
+            else:
+                # Product not found in dataframe, return minimal info
+                product_info = ProductInfo(
+                    product_id=product_id,
+                    title="N/A",
+                    description="N/A",
+                    brand=None,
+                    category=None,
+                    score=float(score)
+                )
+            
+            products.append(product_info)
         
         return RetrieveResponse(
             buyer_id=request.buyer_id,
-            product_ids=product_ids,
-            scores=scores
+            products=products
         )
     
     except Exception as e:
