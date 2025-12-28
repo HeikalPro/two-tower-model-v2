@@ -8,6 +8,7 @@ from pathlib import Path
 
 from src.inference.encoder import EmbeddingEncoder
 from src.inference.vector_db import VectorDatabase
+from src.data.processor import DataProcessor
 from src.utils.config import load_config
 
 
@@ -97,8 +98,13 @@ async def startup_event():
     )
     
     # Load product metadata for encoder
-    # This should be loaded from a preprocessed file or database
-    # For now, we'll assume it's set elsewhere or loaded from products.csv
+    print("Loading product metadata...")
+    processor = DataProcessor()
+    products_df = processor.load_products()
+    product_metadata = processor.get_product_metadata(products_df)
+    encoder.set_product_metadata(product_metadata)
+    print(f"Loaded metadata for {len(product_metadata)} products")
+    
     print("API server initialized successfully")
 
 
