@@ -53,6 +53,7 @@ class ProductInfo(BaseModel):
     brand: Optional[str]
     category: Optional[str]
     score: float
+    photo_link: Optional[str] = None
 
 
 class RetrieveResponse(BaseModel):
@@ -73,12 +74,13 @@ encoder: Optional[EmbeddingEncoder] = None
 vector_db: Optional[VectorDatabase] = None
 config: Optional[Dict] = None
 products_df = None  # Store products DataFrame for retrieving product details
+product_photos: Dict[str, str] = {}  # Dictionary mapping product_id -> photo_url
 
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize models and vector database at startup."""
-    global encoder, vector_db, config, products_df
+    global encoder, vector_db, config, products_df, product_photos
     
     config = load_config()
     
@@ -115,6 +117,23 @@ async def startup_event():
     product_metadata = processor.get_product_metadata(products_df)
     encoder.set_product_metadata(product_metadata)
     print(f"Loaded metadata for {len(product_metadata)} products")
+    
+    # Load product photos
+    print("Loading product photos...")
+    photos_path = Path("data/products photos.csv")
+    if photos_path.exists():
+        photos_df = pd.read_csv(photos_path)
+        # Create dictionary mapping product_id -> photo_url
+        # Handle both 'id' and 'product_id' column names
+        id_col = 'id' if 'id' in photos_df.columns else 'product_id'
+        photo_col = 'thumbnail' if 'thumbnail' in photos_df.columns else 'photo_link'
+        if id_col in photos_df.columns and photo_col in photos_df.columns:
+            product_photos = dict(zip(photos_df[id_col].astype(str), photos_df[photo_col].astype(str)))
+            print(f"Loaded photos for {len(product_photos)} products")
+        else:
+            print(f"Warning: Photos file missing required columns. Expected '{id_col}' and '{photo_col}'")
+    else:
+        print(f"Warning: Photos file not found at {photos_path}")
     
     print("API server initialized successfully")
 
@@ -220,6 +239,9 @@ async def retrieve(request: RetrieveRequest):
             # Find product in dataframe
             product_row = products_df[products_df['product_id'] == product_id]
             
+            # Get photo link from dictionary (O(1) lookup)
+            photo_link = product_photos.get(product_id, None)
+            
             if not product_row.empty:
                 row = product_row.iloc[0]
                 product_info = ProductInfo(
@@ -228,7 +250,8 @@ async def retrieve(request: RetrieveRequest):
                     description=str(row.get('description', 'N/A')),
                     brand=str(row.get('brand', None)) if pd.notna(row.get('brand')) else None,
                     category=str(row.get('category', None)) if pd.notna(row.get('category')) else None,
-                    score=float(score)
+                    score=float(score),
+                    photo_link=photo_link
                 )
             else:
                 # Product not found in dataframe, return minimal info
@@ -238,7 +261,8 @@ async def retrieve(request: RetrieveRequest):
                     description="N/A",
                     brand=None,
                     category=None,
-                    score=float(score)
+                    score=float(score),
+                    photo_link=photo_link
                 )
             
             products.append(product_info)
