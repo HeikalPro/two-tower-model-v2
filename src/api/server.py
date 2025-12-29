@@ -1,6 +1,7 @@
 """FastAPI server for real-time inference."""
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional
 import numpy as np
@@ -67,6 +68,15 @@ app = FastAPI(
     title="Two-Tower Recommendation API",
     description="Real-time buyer encoding and product retrieval API",
     version="1.0.0"
+)
+
+# Add CORS middleware to allow frontend requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with specific frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, OPTIONS, etc.)
+    allow_headers=["*"],  # Allow all headers
 )
 
 # Global variables (initialized at startup)
