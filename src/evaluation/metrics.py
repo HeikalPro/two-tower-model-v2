@@ -749,6 +749,9 @@ class Evaluator:
                         print(f"  {key:35s}: {value:.2f}")
                     else:
                         print(f"  {key:35s}: {value}")
+            
+            # Print analysis and recommendations
+            self._print_analysis(retrieval, results)
         
         # Embedding quality
         if 'embedding_quality' in results:
@@ -775,4 +778,102 @@ class Evaluator:
             print("="*60)
             for key, value in results['coverage'].items():
                 print(f"  {key:30s}: {value}")
+    
+    def _print_analysis(self, retrieval: Dict, results: Dict):
+        """Print analysis and recommendations based on metrics.
+        
+        Args:
+            retrieval: Retrieval metrics dictionary
+            results: Full results dictionary
+        """
+        print("\n" + "="*60)
+        print("Analysis & Recommendations")
+        print("="*60)
+        
+        # Get key metrics
+        category_overlap_10 = retrieval.get('category_overlap@10_mean', 0)
+        brand_overlap_10 = retrieval.get('brand_overlap@10_mean', 0)
+        relevance_10 = retrieval.get('relevance_score@10_mean', 0)
+        recall_10 = retrieval.get('recall@10_mean', 0)
+        hit_rate_10 = retrieval.get('hit_rate@10_mean', 0)
+        
+        # Get diversity metrics - they're stored as 'diversity_category_mean' and 'diversity_brand_mean'
+        diversity_dict = results.get('diversity', {})
+        diversity_category = diversity_dict.get('diversity_category_mean', 0)
+        diversity_brand = diversity_dict.get('diversity_brand_mean', 0)
+        
+        diag = retrieval.get('diagnostics', {})
+        buyers_with_info = diag.get('buyers_with_category_info', 0)
+        total_buyers = diag.get('total_buyers_evaluated', 0)
+        
+        print("\n✅ Strengths:")
+        strengths = []
+        
+        if category_overlap_10 >= 0.3:
+            strengths.append(f"Good category relevance ({category_overlap_10:.1%} of recommendations match buyer's categories)")
+        
+        if relevance_10 >= 0.25:
+            strengths.append(f"Decent overall relevance score ({relevance_10:.1%})")
+        
+        if diversity_brand >= 0.4:
+            strengths.append(f"Good brand diversity ({diversity_brand:.1%})")
+        
+        if len(strengths) == 0:
+            strengths.append("Model is retrieving items (basic functionality working)")
+        
+        for strength in strengths:
+            print(f"  • {strength}")
+        
+        print("\n⚠️  Areas for Improvement:")
+        improvements = []
+        
+        if category_overlap_10 < 0.3:
+            improvements.append(f"Category relevance is low ({category_overlap_10:.1%}) - model may not be learning category preferences well")
+        
+        if diversity_category < 0.1:
+            improvements.append(f"Category diversity is very low ({diversity_category:.1%}) - recommendations are too narrow, consider:")
+            improvements.append("    - Adding diversity constraints to training")
+            improvements.append("    - Using diversity-aware loss functions")
+            improvements.append("    - Post-processing with diversity filters")
+        
+        if brand_overlap_10 < 0.1:
+            improvements.append(f"Brand overlap is low ({brand_overlap_10:.1%}) - may indicate:")
+            improvements.append("    - Missing brand data in product metadata")
+            improvements.append("    - Buyers have diverse brand preferences")
+            improvements.append("    - Model not learning brand signals")
+        
+        if buyers_with_info < total_buyers * 0.5:
+            improvements.append(f"Only {buyers_with_info}/{total_buyers} buyers have category/brand info")
+            improvements.append("    - Improve data quality: ensure products have category/brand metadata")
+            improvements.append("    - Similarity metrics are only computed for buyers with metadata")
+        
+        if recall_10 < 0.01 and hit_rate_10 < 0.01:
+            improvements.append("Exact match metrics are very low (expected with large catalogs)")
+            improvements.append("    - Focus on similarity-based metrics for evaluation")
+            improvements.append("    - Consider if exact match is the right evaluation criterion")
+        
+        if len(improvements) == 0:
+            improvements.append("Model performance looks good!")
+        
+        for improvement in improvements:
+            print(f"  • {improvement}")
+        
+        print("\n💡 Interpretation:")
+        if category_overlap_10 >= 0.4:
+            print("  ✅ Model is finding relevant items! Category overlap of {:.1%} means".format(category_overlap_10))
+            print("     the model successfully identifies items similar to buyer preferences.")
+        elif category_overlap_10 >= 0.2:
+            print("  ⚠️  Model shows moderate relevance. Category overlap of {:.1%} suggests".format(category_overlap_10))
+            print("     the model is partially learning buyer preferences but could improve.")
+        else:
+            print("  ❌ Model relevance is low. Category overlap of {:.1%} suggests".format(category_overlap_10))
+            print("     the model may not be effectively learning buyer preferences.")
+        
+        if diversity_category < 0.05:
+            print("\n  ⚠️  WARNING: Very low category diversity ({:.1%}) indicates recommendations".format(diversity_category))
+            print("     are too narrow. Users may experience filter bubbles. Consider:")
+            print("     - Adding diversity regularization to training")
+            print("     - Implementing diversity-aware retrieval")
+        
+        print("\n" + "="*60)
 
