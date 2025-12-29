@@ -30,6 +30,7 @@ Two Tower model v2/
 │   ├── models/         # Model architectures
 │   ├── training/      # Training pipeline and losses
 │   ├── inference/     # Embedding generation and vector DB
+│   ├── evaluation/    # Model evaluation metrics
 │   ├── api/           # FastAPI server
 │   └── utils/         # Configuration management
 ├── configs/           # Configuration files
@@ -146,7 +147,33 @@ This creates:
 - `outputs/index/product_ids.npy`
 - `outputs/index/product_id_to_index.json`
 
-### 4. Start API Server
+### 4. Evaluate Model
+
+Evaluate the trained model with comprehensive metrics:
+
+```bash
+python scripts/evaluate.py
+```
+
+This will compute:
+- **Retrieval Metrics**: Recall@K, Precision@K, NDCG@K, MRR, Hit Rate@K
+- **Embedding Quality**: Norm distribution, similarity statistics
+- **Diversity**: Category and brand diversity of recommendations
+- **Coverage**: Catalog coverage (how many products are recommended)
+
+Results are saved to `outputs/evaluation_results.json`.
+
+**Options:**
+```bash
+python scripts/evaluate.py \
+  --test-split 0.2 \
+  --min-interactions 3 \
+  --k-values 1 5 10 20 50 \
+  --output outputs/evaluation_results.json \
+  --max-test-samples 1000
+```
+
+### 5. Start API Server
 
 Launch the FastAPI server:
 
@@ -160,7 +187,7 @@ Or using uvicorn directly:
 uvicorn src.api.server:app --host 0.0.0.0 --port 8000
 ```
 
-### 5. API Usage
+### 6. API Usage
 
 #### Encode Buyer
 
@@ -191,6 +218,28 @@ curl -X POST "http://localhost:8000/retrieve" \
     "k": 10
   }'
 ```
+
+## Evaluation Metrics
+
+The evaluation module (`src/evaluation/metrics.py`) provides comprehensive metrics:
+
+### Retrieval Metrics
+- **Recall@K**: Fraction of relevant items retrieved in top-K
+- **Precision@K**: Fraction of top-K items that are relevant
+- **NDCG@K**: Normalized Discounted Cumulative Gain (ranking quality)
+- **MRR**: Mean Reciprocal Rank (position of first relevant item)
+- **Hit Rate@K**: Whether at least one relevant item is in top-K
+
+### Embedding Quality Metrics
+- Embedding norm distribution (mean, std, min, max)
+- Pairwise cosine similarity statistics
+
+### Diversity Metrics
+- Category diversity: Fraction of unique categories in recommendations
+- Brand diversity: Fraction of unique brands in recommendations
+
+### Coverage Metrics
+- Catalog coverage: Fraction of catalog items that appear in recommendations
 
 ## Sanity Checks
 
