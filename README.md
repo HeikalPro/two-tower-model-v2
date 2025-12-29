@@ -223,12 +223,18 @@ curl -X POST "http://localhost:8000/retrieve" \
 
 The evaluation module (`src/evaluation/metrics.py`) provides comprehensive metrics:
 
-### Retrieval Metrics
+### Retrieval Metrics (Exact Match)
 - **Recall@K**: Fraction of relevant items retrieved in top-K
 - **Precision@K**: Fraction of top-K items that are relevant
 - **NDCG@K**: Normalized Discounted Cumulative Gain (ranking quality)
 - **MRR**: Mean Reciprocal Rank (position of first relevant item)
 - **Hit Rate@K**: Whether at least one relevant item is in top-K
+
+### Similarity-Based Metrics (Relevance)
+These metrics measure whether retrieved items are similar to the buyer's history, even if not exact matches:
+- **Category Overlap@K**: Fraction of retrieved items sharing categories with buyer's history
+- **Brand Overlap@K**: Fraction of retrieved items sharing brands with buyer's history
+- **Relevance Score@K**: Weighted combination of category and brand overlap (measures overall relevance)
 
 ### Embedding Quality Metrics
 - Embedding norm distribution (mean, std, min, max)
@@ -240,6 +246,40 @@ The evaluation module (`src/evaluation/metrics.py`) provides comprehensive metri
 
 ### Coverage Metrics
 - Catalog coverage: Fraction of catalog items that appear in recommendations
+
+### Diagnostic Metrics
+- Average history size per buyer
+- Average number of relevant items
+- Number of buyers with category/brand information
+
+## Interpreting Evaluation Results
+
+### Understanding the Metrics
+
+**Exact Match Metrics** (Recall@K, Precision@K, etc.):
+- These measure whether the model retrieves the **exact same products** the buyer interacted with in the future
+- Low scores are expected in large catalogs (100K+ products) - finding exact matches is very difficult
+- These metrics are useful for measuring prediction accuracy, but may not reflect real-world usefulness
+
+**Similarity-Based Metrics** (Category Overlap, Brand Overlap, Relevance Score):
+- These measure whether retrieved items are **similar/relevant** to the buyer's history
+- High scores indicate the model is finding related items (same category/brand as buyer's history)
+- These are often more meaningful for recommendation systems - users want similar items, not necessarily exact repeats
+
+### Example Interpretation
+
+If you see:
+- **Low exact match metrics** (Recall@10 = 0.01) but **High similarity metrics** (Category Overlap@10 = 0.75)
+  - ✅ Model is working well! It's finding relevant items similar to user history
+  - The low exact match is expected - with 150K products, exact matches are rare
+
+- **Low exact match AND low similarity metrics** (Category Overlap@10 < 0.3)
+  - ⚠️ Model may need improvement - it's not finding relevant items
+  - Check: training data quality, model architecture, hyperparameters
+
+- **High exact match but low diversity** (Category Diversity = 0.02)
+  - ⚠️ Model may be overfitting to specific categories
+  - Consider: increasing diversity in training, adjusting loss function
 
 ## Sanity Checks
 

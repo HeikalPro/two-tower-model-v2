@@ -196,6 +196,112 @@ def compute_coverage(
     return len(all_retrieved_items) / len(all_product_ids)
 
 
+def compute_category_overlap(
+    retrieved_items: List[str],
+    buyer_history_items: List[str],
+    product_metadata: Dict[str, Dict]
+) -> float:
+    """Compute category overlap between retrieved items and buyer history.
+    
+    Measures how many retrieved items share categories with buyer's history.
+    
+    Args:
+        retrieved_items: List of retrieved product IDs
+        buyer_history_items: List of product IDs from buyer's history
+        product_metadata: Dictionary mapping product_id to metadata
+        
+    Returns:
+        Category overlap score (0.0 to 1.0)
+    """
+    if len(retrieved_items) == 0 or len(buyer_history_items) == 0:
+        return 0.0
+    
+    # Get categories from buyer history
+    history_categories = set()
+    for product_id in buyer_history_items:
+        metadata = product_metadata.get(product_id, {})
+        category = metadata.get('category')
+        if category:
+            history_categories.add(category)
+    
+    if len(history_categories) == 0:
+        return 0.0
+    
+    # Count retrieved items with matching categories
+    matching = 0
+    for product_id in retrieved_items:
+        metadata = product_metadata.get(product_id, {})
+        category = metadata.get('category')
+        if category and category in history_categories:
+            matching += 1
+    
+    return matching / len(retrieved_items)
+
+
+def compute_brand_overlap(
+    retrieved_items: List[str],
+    buyer_history_items: List[str],
+    product_metadata: Dict[str, Dict]
+) -> float:
+    """Compute brand overlap between retrieved items and buyer history.
+    
+    Measures how many retrieved items share brands with buyer's history.
+    
+    Args:
+        retrieved_items: List of retrieved product IDs
+        buyer_history_items: List of product IDs from buyer's history
+        product_metadata: Dictionary mapping product_id to metadata
+        
+    Returns:
+        Brand overlap score (0.0 to 1.0)
+    """
+    if len(retrieved_items) == 0 or len(buyer_history_items) == 0:
+        return 0.0
+    
+    # Get brands from buyer history
+    history_brands = set()
+    for product_id in buyer_history_items:
+        metadata = product_metadata.get(product_id, {})
+        brand = metadata.get('brand')
+        if brand:
+            history_brands.add(brand)
+    
+    if len(history_brands) == 0:
+        return 0.0
+    
+    # Count retrieved items with matching brands
+    matching = 0
+    for product_id in retrieved_items:
+        metadata = product_metadata.get(product_id, {})
+        brand = metadata.get('brand')
+        if brand and brand in history_brands:
+            matching += 1
+    
+    return matching / len(retrieved_items)
+
+
+def compute_relevance_score(
+    retrieved_items: List[str],
+    buyer_history_items: List[str],
+    product_metadata: Dict[str, Dict]
+) -> float:
+    """Compute overall relevance score based on category and brand overlap.
+    
+    Args:
+        retrieved_items: List of retrieved product IDs
+        buyer_history_items: List of product IDs from buyer's history
+        product_metadata: Dictionary mapping product_id to metadata
+        
+    Returns:
+        Relevance score (0.0 to 1.0) - weighted average of category and brand overlap
+    """
+    category_overlap = compute_category_overlap(retrieved_items, buyer_history_items, product_metadata)
+    brand_overlap = compute_brand_overlap(retrieved_items, buyer_history_items, product_metadata)
+    
+    # Weighted average (category is more important)
+    return 0.7 * category_overlap + 0.3 * brand_overlap
+
+
 def compute_embedding_stats(
     embeddings: np.ndarray
 ) -> Dict[str, float]:
@@ -292,13 +398,29 @@ class Evaluator:
             metrics[f'precision@{k}'] = []
             metrics[f'ndcg@{k}'] = []
             metrics[f'hit_rate@{k}'] = []
+            # New similarity-based metrics
+            metrics[f'category_overlap@{k}'] = []
+            metrics[f'brand_overlap@{k}'] = []
+            metrics[f'relevance_score@{k}'] = []
         metrics['mrr'] = []
+        
+        # Diagnostic metrics
+        diagnostic_metrics = {
+            'avg_history_size': [],
+            'avg_relevant_items': [],
+            'avg_retrieved_items': [],
+            'buyers_with_category_info': 0,
+            'buyers_with_brand_info': 0
+        }
         
         # Evaluate each test pair
         iterator = tqdm(test_pairs, desc="Evaluating retrieval") if verbose else test_pairs
         
         for buyer_id, interactions, relevant_items in iterator:
             try:
+                # Get buyer history product IDs
+                buyer_history_items = [interaction['product_id'] for interaction in interactions]
+                
                 # Encode buyer
                 buyer_embedding = self.encoder.encode_buyer(interactions)
                 
@@ -309,6 +431,9 @@ class Evaluator:
                 
                 # Compute metrics for each K
                 for k in k_values:
+                    top_k_items = retrieved_items[:k]
+                    
+                    # Exact match metrics
                     metrics[f'recall@{k}'].append(
                         compute_recall_at_k(retrieved_items, relevant_items, k)
                     )
@@ -321,10 +446,44 @@ class Evaluator:
                     metrics[f'hit_rate@{k}'].append(
                         compute_hit_rate_at_k(retrieved_items, relevant_items, k)
                     )
+                    
+                    # Similarity-based metrics
+                    category_overlap = compute_category_overlap(
+                        top_k_items, buyer_history_items, self.product_metadata
+                    )
+                    brand_overlap = compute_brand_overlap(
+                        top_k_items, buyer_history_items, self.product_metadata
+                    )
+                    relevance_score = compute_relevance_score(
+                        top_k_items, buyer_history_items, self.product_metadata
+                    )
+                    
+                    metrics[f'category_overlap@{k}'].append(category_overlap)
+                    metrics[f'brand_overlap@{k}'].append(brand_overlap)
+                    metrics[f'relevance_score@{k}'].append(relevance_score)
                 
                 metrics['mrr'].append(
                     compute_mrr(retrieved_items, relevant_items)
                 )
+                
+                # Collect diagnostic info
+                diagnostic_metrics['avg_history_size'].append(len(buyer_history_items))
+                diagnostic_metrics['avg_relevant_items'].append(len(relevant_items))
+                diagnostic_metrics['avg_retrieved_items'].append(len(retrieved_items))
+                
+                # Check if buyer has category/brand info
+                has_category = any(
+                    self.product_metadata.get(pid, {}).get('category')
+                    for pid in buyer_history_items
+                )
+                has_brand = any(
+                    self.product_metadata.get(pid, {}).get('brand')
+                    for pid in buyer_history_items
+                )
+                if has_category:
+                    diagnostic_metrics['buyers_with_category_info'] += 1
+                if has_brand:
+                    diagnostic_metrics['buyers_with_brand_info'] += 1
                 
             except Exception as e:
                 if verbose:
@@ -338,6 +497,17 @@ class Evaluator:
                 aggregated[f'{key}_mean'] = float(np.mean(values))
                 aggregated[f'{key}_std'] = float(np.std(values))
                 aggregated[f'{key}_median'] = float(np.median(values))
+        
+        # Add diagnostic metrics
+        if len(diagnostic_metrics['avg_history_size']) > 0:
+            aggregated['diagnostics'] = {
+                'avg_history_size': float(np.mean(diagnostic_metrics['avg_history_size'])),
+                'avg_relevant_items': float(np.mean(diagnostic_metrics['avg_relevant_items'])),
+                'avg_retrieved_items': float(np.mean(diagnostic_metrics['avg_retrieved_items'])),
+                'buyers_with_category_info': diagnostic_metrics['buyers_with_category_info'],
+                'buyers_with_brand_info': diagnostic_metrics['buyers_with_brand_info'],
+                'total_buyers_evaluated': len(diagnostic_metrics['avg_history_size'])
+            }
         
         return aggregated
     
@@ -537,21 +707,62 @@ class Evaluator:
         """
         # Retrieval metrics
         if 'retrieval' in results:
-            print("\nRetrieval Metrics:")
-            for key, value in sorted(results['retrieval'].items()):
+            retrieval = results['retrieval']
+            
+            print("\n" + "="*60)
+            print("Retrieval Metrics (Exact Match)")
+            print("="*60)
+            
+            # Group metrics by type
+            exact_metrics = {}
+            similarity_metrics = {}
+            diagnostic_metrics = {}
+            
+            for key, value in retrieval.items():
+                if key.startswith('diagnostics'):
+                    diagnostic_metrics[key] = value
+                elif 'overlap' in key or 'relevance' in key:
+                    similarity_metrics[key] = value
+                else:
+                    exact_metrics[key] = value
+            
+            # Print exact match metrics
+            print("\nExact Match Metrics:")
+            for key in sorted(exact_metrics.keys()):
                 if key.endswith('_mean'):
                     metric_name = key.replace('_mean', '')
-                    print(f"  {metric_name:30s}: {value:.4f}")
+                    print(f"  {metric_name:35s}: {exact_metrics[key]:.4f}")
+            
+            # Print similarity-based metrics
+            print("\nSimilarity-Based Metrics (Relevance):")
+            for key in sorted(similarity_metrics.keys()):
+                if key.endswith('_mean'):
+                    metric_name = key.replace('_mean', '')
+                    print(f"  {metric_name:35s}: {similarity_metrics[key]:.4f}")
+            
+            # Print diagnostics
+            if 'diagnostics' in diagnostic_metrics:
+                print("\nDiagnostics:")
+                diag = diagnostic_metrics['diagnostics']
+                for key, value in diag.items():
+                    if isinstance(value, float):
+                        print(f"  {key:35s}: {value:.2f}")
+                    else:
+                        print(f"  {key:35s}: {value}")
         
         # Embedding quality
         if 'embedding_quality' in results:
-            print("\nEmbedding Quality:")
+            print("\n" + "="*60)
+            print("Embedding Quality")
+            print("="*60)
             for key, value in results['embedding_quality'].items():
                 print(f"  {key:30s}: {value:.4f}")
         
         # Diversity
         if 'diversity' in results:
-            print("\nDiversity:")
+            print("\n" + "="*60)
+            print("Diversity")
+            print("="*60)
             for key, value in sorted(results['diversity'].items()):
                 if key.endswith('_mean'):
                     metric_name = key.replace('_mean', '')
@@ -559,7 +770,9 @@ class Evaluator:
         
         # Coverage
         if 'coverage' in results:
-            print("\nCoverage:")
+            print("\n" + "="*60)
+            print("Coverage")
+            print("="*60)
             for key, value in results['coverage'].items():
                 print(f"  {key:30s}: {value}")
 

@@ -9,7 +9,10 @@ from src.evaluation.metrics import (
     compute_hit_rate_at_k,
     compute_diversity,
     compute_coverage,
-    compute_embedding_stats
+    compute_embedding_stats,
+    compute_category_overlap,
+    compute_brand_overlap,
+    compute_relevance_score
 )
 
 __all__ = [
@@ -21,6 +24,9 @@ __all__ = [
     'compute_hit_rate_at_k',
     'compute_diversity',
     'compute_coverage',
-    'compute_embedding_stats'
+    'compute_embedding_stats',
+    'compute_category_overlap',
+    'compute_brand_overlap',
+    'compute_relevance_score'
 ]
 

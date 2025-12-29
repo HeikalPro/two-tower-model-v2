@@ -125,6 +125,11 @@ def main():
         default=None,
         help='Maximum number of test samples to evaluate'
     )
+    parser.add_argument(
+        '--skip-exact-metrics',
+        action='store_true',
+        help='Skip exact match metrics (only compute similarity-based metrics)'
+    )
     
     args = parser.parse_args()
     
