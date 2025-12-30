@@ -106,6 +106,9 @@ class DataProcessor:
         # Remove products with missing text
         df = df[df['text'].str.len() > 0]
         
+        # Deduplicate products based on content (before embeddings are generated)
+        df = self._deduplicate_products(df)
+        
         return df
     
     def _extract_metadata(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -236,4 +239,83 @@ class DataProcessor:
             }
         
         return metadata_dict
+    
+    def _deduplicate_products(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Remove duplicate products based on content similarity.
+        
+        Identifies duplicates based on normalized title + description + brand.
+        Keeps the first occurrence (the one that appears first in the dataset).
+        
+        This happens before embeddings are generated, ensuring the FAISS index
+        doesn't contain duplicate products with different IDs.
+        
+        Args:
+            df: Products DataFrame
+            
+        Returns:
+            DataFrame with duplicates removed
+        """
+        original_count = len(df)
+        
+        # Create a normalized key for comparison (lowercase, stripped, combined title+description+brand)
+        df['dedup_key'] = df.apply(
+            lambda row: self._create_dedup_key(
+                row.get('title', ''),
+                row.get('description', ''),
+                row.get('brand', '')
+            ),
+            axis=1
+        )
+        
+        # Keep first occurrence of each duplicate group
+        # Sort by dedup_key to ensure consistent results
+        df = df.sort_values('dedup_key').drop_duplicates(
+            subset=['dedup_key'],
+            keep='first'
+        )
+        
+        # Drop the temporary dedup_key column
+        df = df.drop(columns=['dedup_key'])
+        
+        removed_count = original_count - len(df)
+        if removed_count > 0:
+            print(f"Deduplicated products: Removed {removed_count} duplicates ({original_count} -> {len(df)})")
+        
+        return df
+    
+    def _create_dedup_key(self, title: str, description: str, brand: str = None) -> str:
+        """Create a normalized key for duplicate detection.
+        
+        Normalizes the product information to identify products that are
+        essentially the same despite having different IDs.
+        
+        Args:
+            title: Product title
+            description: Product description
+            brand: Product brand (optional)
+            
+        Returns:
+            Normalized key string for duplicate detection
+        """
+        title = str(title) if pd.notna(title) else ""
+        description = str(description) if pd.notna(description) else ""
+        brand = str(brand) if pd.notna(brand) else ""
+        
+        # Normalize: lowercase, strip whitespace, remove extra spaces
+        title = ' '.join(title.lower().strip().split())
+        description = ' '.join(description.lower().strip().split())
+        brand = ' '.join(brand.lower().strip().split())
+        
+        # Combine fields
+        key_parts = []
+        if title:
+            key_parts.append(title)
+        # Only add description if it's different from title (to avoid duplication)
+        if description and description != title:
+            key_parts.append(description)
+        if brand:
+            key_parts.append(brand)
+        
+        # Join with separator to create unique key
+        return ' || '.join(key_parts)
 
