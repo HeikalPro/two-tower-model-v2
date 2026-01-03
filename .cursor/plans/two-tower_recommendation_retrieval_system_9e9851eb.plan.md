@@ -283,6 +283,3 @@ Two Tower model v2/
 
 1. **Multilingual Sentence-Transformers**: Balance between Arabic support and ease of deployment
 2. **Dual Aggregation Methods**: Configurable weighted average (fast) and attention (expressive)
-3. **Separate Training/Inference**: Clear separation for production deployment
-4. **FAISS for Retrieval**: Industry-standard, efficient vector search
-5. **Stateless API**: Real-time buyer encoding without retraining

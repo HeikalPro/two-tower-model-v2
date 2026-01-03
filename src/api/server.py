@@ -43,7 +43,7 @@ class RetrieveRequest(BaseModel):
     """Request for retrieving products."""
     buyer_id: str
     recent_interactions: List[Interaction]
-    k: int = Field(10, ge=1, le=100, description="Number of products to retrieve")
+    k: int = Field(10, ge=1, le=1000, description="Number of products to retrieve (max 1000)")
 
 
 class ProductInfo(BaseModel):
